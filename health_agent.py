@@ -11,7 +11,7 @@ import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 import asyncio
-
+import deepseek_fix
 # 配置日志
 logging.basicConfig(
     level=logging.INFO,
@@ -23,22 +23,60 @@ logging.basicConfig(
 )
 # 全局线程池将在主函数中初始化
 
+# 检测运行环境的函数
+def is_streamlit_cloud():
+    """检测是否在Streamlit Cloud环境中运行"""
+    return (
+        os.getenv("STREAMLIT_SHARING_MODE") is not None or
+        os.getenv("HOSTNAME", "").startswith("streamlit") or
+        "streamlit" in os.getenv("HOSTNAME", "").lower() or
+        os.getenv("STREAMLIT_SERVER_HEADLESS") == "true"
+    )
+
 # 获取API密钥的函数
 def get_api_key():
+    """根据运行环境获取相应的API密钥"""
     try:
-        api_key = st.secrets["api_keys"]["API_KEY"]
-        logging.info(f"已成功从 secrets.toml 加载API密钥")
-        return api_key
+        if is_streamlit_cloud():
+            # Streamlit Cloud环境，尝试获取Gemini API密钥
+            try:
+                api_key = st.secrets["api_keys"]["API_KEY"]
+                logging.info("已成功从 secrets.toml 加载 Gemini API密钥")
+                return api_key
+            except KeyError:
+                logging.info("请在 secrets.toml 中设置 API_KEY！")
+                return api_key
+        else:
+            # 本地环境，优先获取OpenAI API密钥
+            try:
+                api_key = os.getenv("API_KEY")
+                logging.info("已从环境变量加载 API密钥")
+                return api_key
+            except KeyError:
+                logging.info("请设置 API_KEY 环境变量！")
+                return api_key
     except (KeyError, FileNotFoundError):
         # 如果 secrets.toml 中没有，则尝试从环境变量读取
-        api_key = os.getenv("API_KEY") or os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            logging.error(
-                "请在 secrets.toml 中设置 API_KEY 或设置环境变量 API_KEY/OPENAI_API_KEY！"
-            )
-        else:
-            logging.info(f"已从环境变量加载API密钥")
-        return api_key
+        logging.error("如果secrets.toml中没有，请设置 API_KEY 环境变量！")
+        return None
+
+# 根据运行环境获取默认配置
+def get_default_config():
+    """根据运行环境返回默认的模型配置"""
+    if is_streamlit_cloud():
+        # Streamlit Cloud 环境使用 Gemini
+        return {
+            "model_provider": os.getenv("MODEL_PROVIDER","Gemini"),
+            "model_name": os.getenv("MODEL_NAME","gemini-2.5-flash-preview-05-20"),
+            "base_url": os.getenv("URL","https://aistudio.google.com/apikey")
+        }
+    else:
+        # 本地环境使用 OpenAI
+        return {
+            "model_provider": os.getenv("MODEL_PROVIDER","DeepSeek"), 
+            "model_name": os.getenv("MODEL_NAME","deepseek-v3"),
+            "base_url": os.getenv("URL")
+        }
 
 st.set_page_config(
     page_title="AI 健康与健身规划器",
@@ -118,81 +156,6 @@ def display_fitness_plan(plan_content):
                     st.info(tip)
 
 
-def display_sidebar():
-    with st.sidebar:
-        st.header("🔑 模型配置")
-        # 模型提供商选择
-        model_provider = st.selectbox(
-            "选择模型提供商",
-            options=["Gemini", "OpenAI"],
-            help="选择您要使用的 AI 模型提供商",
-        )
-
-        if model_provider == "Gemini":
-            st.subheader("🤖 Gemini 配置")
-            base_url = st.text_input(
-                "API Base URL",
-                value="https://aistudio.google.com/apikey",
-                help="API URL",
-            )
-            api_key = st.text_input(
-                "Gemini API 密钥", type="password", help="输入您的 Gemini API 密钥"
-            )
-
-            model_name = st.selectbox(
-                "Gemini 模型",
-                options=[
-                    "gemini-2.5-flash-preview-05-20",
-                    "gemini-1.5-pro",
-                    "gemini-1.5-flash",
-                    "gemini-pro",
-                ],
-                help="选择要使用的 Gemini 模型",
-            )
-
-            if not api_key:
-                st.warning("⚠️ 请输入您的 Gemini API 密钥以继续")
-                st.markdown(
-                    "[在此处获取您的 API 密钥](https://aistudio.google.com/apikey)"
-                )
-                return None, None, None, None
-
-        elif model_provider == "OpenAI":
-            st.subheader("🤖 OpenAI 配置")
-            api_key = st.text_input(
-                "OpenAI API 密钥", type="password", help="输入您的 OpenAI API 密钥"
-            )
-            base_url = st.text_input(
-                "API Base URL", value="https://api.openai.com/v1", help="API URL"
-            )
-            model_name = st.selectbox(
-                "OpenAI 模型",
-                options=[
-                    "gpt-4o",
-                    "gpt-4o-mini",
-                    "gpt-4-turbo",
-                    "gpt-3.5-turbo",
-                    "deepseek-v3",
-                    "glm",
-                ],
-                help="选择要使用的 OpenAI 模型",
-            )
-            if model_name == "deepseek-v3":
-                model_name = "deepseek-v3-241226-volces"
-            elif model_name == "glm":
-                model_name = "glm-4-flash"
-
-            if not api_key:
-                st.warning("⚠️ 请输入您的 OpenAI API 密钥以继续")
-                st.markdown(
-                    "[在此处获取您的 API 密钥](https://platform.openai.com/api-keys)"
-                )
-                return None, None, None, None
-
-        st.success(f"✅ {model_provider} 配置完成！")
-    return model_provider, model_name, base_url, api_key
-
-
 # 异步生成计划的函数
 def generate_plan_async(user_profile, model_provider, model_name, base_url, api_key, plan_type):
     """异步生成饮食或健身计划"""
@@ -200,15 +163,15 @@ def generate_plan_async(user_profile, model_provider, model_name, base_url, api_
         # 初始化模型
         model = None
         if model_provider == "Gemini":
+            logging.info(f"+++++使用Gemini模型: {model_name}, {base_url}, {api_key}")
+
             model = Gemini(id=model_name, api_key=api_key)
-        elif model_provider == "OpenAI":
-            clean_base_url = base_url.strip().replace("@", "")
-            if not clean_base_url.endswith("/"):
-                clean_base_url += "/"
+        else:
+            logging.info(f"+++++使用OpenAI模型: {model_name}, {base_url}, {api_key}")
             model = OpenAIChat(
                 id=model_name,
                 api_key=api_key,
-                base_url=clean_base_url,
+                base_url=base_url,
                 max_tokens=2000,
                 temperature=0.7,
             )
@@ -309,48 +272,62 @@ def main():
         unsafe_allow_html=True,
     )
     
-    # 默认配置 - 优先使用环境变量
-    default_api_key = get_api_key()
+    # 根据运行环境获取默认配置
+    default_config = get_default_config()
+    api_key_to_use = get_api_key()
     
-    # 如果有环境变量API密钥，默认使用Gemini，否则显示侧边栏配置
-    if default_api_key:
-        model_provider = "Gemini"
-        model_name = "gemini-2.5-flash-preview-05-20"
-        base_url = "https://aistudio.google.com/apikey"
-        api_key_to_use = default_api_key
-        
-        # 在侧边栏显示当前配置
-        with st.sidebar:
-            st.header("🔑 当前配置")
-            st.success(f"✅ 使用 {model_provider} 模型")
-            st.info(f"模型: {model_name}")
-            st.info("API密钥: 已从环境变量加载")
-            
-            # 允许用户切换到手动配置
-            if st.button("🔧 手动配置模型"):
-                st.session_state.manual_config = True
-                st.rerun()
-    else:
-        st.session_state.manual_config = True
+    # 记录运行环境和配置信息
+    is_cloud = is_streamlit_cloud()
+    logging.info(f"用户 {st.session_state.user_id} - 运行环境: {'Streamlit Cloud' if is_cloud else '本地环境'}")
+    logging.info(f"用户 {st.session_state.user_id} - 默认配置: {default_config}")
     
-    # 如果需要手动配置或用户选择手动配置
-    if st.session_state.get('manual_config', False):
-        config_result = display_sidebar()
-        if config_result[0] is None:  # 配置不完整
-            return
-        model_provider, model_name, base_url, api_key_to_use = config_result
+    # 使用环境默认配置
+    model_provider = default_config["model_provider"]
+    model_name = default_config["model_name"]
+    base_url = default_config["base_url"]
+    
+    # 检查API密钥是否可用
+    if not api_key_to_use:
+        if is_cloud:
+            st.error("❌ 无法获取 Gemini API 密钥，请在 Streamlit Cloud 的 secrets.toml 中配置 GEMINI_API_KEY 或 API_KEY")
+            st.markdown("""
+            **配置说明：**
+            1. 在 Streamlit Cloud 项目设置中添加 secrets.toml 文件
+            2. 添加以下内容：
+            ```toml
+            [api_keys]
+            GEMINI_API_KEY = "your-gemini-api-key-here"
+            ```
+            3. 重新部署应用
+            """)
+        else:
+            st.error("❌ 无法获取 OpenAI API 密钥，请设置环境变量 OPENAI_API_KEY 或在 secrets.toml 中配置")
+            st.markdown("""
+            **配置说明：**
+            1. 设置环境变量：`export OPENAI_API_KEY=your-openai-api-key`
+            2. 或在项目根目录创建 .streamlit/secrets.toml 文件：
+            ```toml
+            [api_keys]
+            OPENAI_API_KEY = "your-openai-api-key-here"
+            ```
+            """)
+        return
     
     logging.info(f"用户 {st.session_state.user_id} - model_provider: {model_provider}")
     logging.info(f"用户 {st.session_state.user_id} - model_name: {model_name}")
     logging.info(f"用户 {st.session_state.user_id} - base_url: {base_url}")
     logging.info(f"用户 {st.session_state.user_id} - api_key: {api_key_to_use[:10] if api_key_to_use else 'None'}...")
     
-    # 显示配置状态
-    if model_provider and model_name and api_key_to_use:
-        st.success(f"✅ 配置完成：{model_provider} - {model_name}")
-    else:
-        st.error("❌ 配置不完整，请检查API密钥和模型设置")
-        return
+    # 显示当前环境和模型配置状态
+    # with st.sidebar:
+    #     st.header("🤖 当前配置")
+    #     st.success(f"**环境:** {'Streamlit Cloud' if is_cloud else '本地环境'}")
+    #     st.info(f"**模型提供商:** {model_provider}")
+    #     st.info(f"**模型:** {model_name}")
+    #     if api_key_to_use:
+    #         st.success("✅ API 密钥已配置")
+    #     else:
+    #         st.error("❌ 未找到 API 密钥")
 
     st.header("👤 您的个人资料")
 
@@ -361,7 +338,7 @@ def main():
             "年龄", min_value=10, max_value=100, step=1, value=25, help="输入您的年龄"
         )
         height = st.number_input(
-            "身高 (cm)", min_value=120.0, max_value=250.0, step=0.1, value=170.0
+            "身高 (cm)", min_value=120.0, max_value=250.0, step=0.1, value=165.0
         )
         activity_level = st.selectbox(
             "活动水平",

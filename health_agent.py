@@ -12,6 +12,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 import asyncio
 import deepseek_fix
+
 # 配置日志
 logging.basicConfig(
     level=logging.INFO,
@@ -23,15 +24,17 @@ logging.basicConfig(
 )
 # 全局线程池将在主函数中初始化
 
+
 # 检测运行环境的函数
 def is_streamlit_cloud():
     """检测是否在Streamlit Cloud环境中运行"""
     return (
-        os.getenv("STREAMLIT_SHARING_MODE") is not None or
-        os.getenv("HOSTNAME", "").startswith("streamlit") or
-        "streamlit" in os.getenv("HOSTNAME", "").lower() or
-        os.getenv("STREAMLIT_SERVER_HEADLESS") == "true"
+        os.getenv("STREAMLIT_SHARING_MODE") is not None
+        or os.getenv("HOSTNAME", "").startswith("streamlit")
+        or "streamlit" in os.getenv("HOSTNAME", "").lower()
+        or os.getenv("STREAMLIT_SERVER_HEADLESS") == "true"
     )
+
 
 # 获取API密钥的函数
 def get_api_key():
@@ -60,23 +63,25 @@ def get_api_key():
         logging.error("如果secrets.toml中没有，请设置 API_KEY 环境变量！")
         return None
 
+
 # 根据运行环境获取默认配置
 def get_default_config():
     """根据运行环境返回默认的模型配置"""
     if is_streamlit_cloud():
         # Streamlit Cloud 环境使用 Gemini
         return {
-            "model_provider": os.getenv("MODEL_PROVIDER","Gemini"),
-            "model_name": os.getenv("MODEL_NAME","gemini-2.5-flash-preview-05-20"),
-            "base_url": os.getenv("URL","https://aistudio.google.com/apikey")
+            "model_provider": os.getenv("MODEL_PROVIDER", "Gemini"),
+            "model_name": os.getenv("MODEL_NAME", "gemini-2.5-flash-preview-05-20"),
+            "base_url": os.getenv("URL", "https://aistudio.google.com/apikey"),
         }
     else:
         # 本地环境使用 OpenAI
         return {
-            "model_provider": os.getenv("MODEL_PROVIDER","DeepSeek"), 
-            "model_name": os.getenv("MODEL_NAME","deepseek-v3"),
-            "base_url": os.getenv("URL")
+            "model_provider": os.getenv("MODEL_PROVIDER", "DeepSeek"),
+            "model_name": os.getenv("MODEL_NAME", "deepseek-v3"),
+            "base_url": os.getenv("URL"),
         }
+
 
 st.set_page_config(
     page_title="AI 健康与健身规划器",
@@ -157,17 +162,18 @@ def display_fitness_plan(plan_content):
 
 
 # 异步生成计划的函数
-def generate_plan_async(user_profile, model_provider, model_name, base_url, api_key, plan_type):
+def generate_plan_async(
+    user_profile, model_provider, model_name, base_url, api_key, plan_type
+):
     """异步生成饮食或健身计划"""
     try:
         # 初始化模型
         model = None
         if model_provider == "Gemini":
-            logging.info(f"+++++使用Gemini模型: {model_name}, {base_url}, {api_key}")
-
+            logging.info(f"使用Gemini模型: {model_name}, {base_url}, {api_key}")
             model = Gemini(id=model_name, api_key=api_key)
         else:
-            logging.info(f"+++++使用OpenAI模型: {model_name}, {base_url}, {api_key}")
+            logging.info(f"使用OpenAI模型: {model_name}, {base_url}, {api_key}")
             model = OpenAIChat(
                 id=model_name,
                 api_key=api_key,
@@ -175,7 +181,7 @@ def generate_plan_async(user_profile, model_provider, model_name, base_url, api_
                 max_tokens=2000,
                 temperature=0.7,
             )
-        
+
         if plan_type == "dietary":
             agent = Agent(
                 name="饮食专家",
@@ -198,33 +204,36 @@ def generate_plan_async(user_profile, model_provider, model_name, base_url, api_
                 - 确保计划具有可操作性和详细性
                 请用中文回复。""",
             )
-        
+
         response = agent.run(user_profile)
-        
+
         if not response or not hasattr(response, "content"):
             return None
-            
+
         return response.content
-        
+
     except Exception as e:
         logging.error(f"生成{plan_type}计划时出错: {str(e)}")
         return None
+
 
 # 初始化session state的函数
 def init_session_state():
     """初始化用户会话状态"""
     if "user_id" not in st.session_state:
         st.session_state.user_id = str(uuid.uuid4())
-    
+
     if "executor" not in st.session_state:
         st.session_state.executor = ThreadPoolExecutor(max_workers=10)
-    
+
     if "dietary_plan" not in st.session_state:
         st.session_state.dietary_plan = {}
         st.session_state.fitness_plan = {}
         st.session_state.qa_pairs = []
         st.session_state.plans_generated = False
-        st.session_state.generation_status = "idle"  # idle, generating, completed, error
+        st.session_state.generation_status = (
+            "idle"  # idle, generating, completed, error
+        )
         st.session_state.generation_progress = 0
         st.session_state.current_task = ""
         logging.info(f"用户 {st.session_state.user_id} 会话状态初始化完成")
@@ -233,10 +242,12 @@ def init_session_state():
 def main():
     # 初始化会话状态
     init_session_state()
-    
+
     # 应用启动日志
     startup_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    logging.info(f"AI 健康与健身规划器启动 - 时间: {startup_time} - 用户: {st.session_state.user_id}")
+    logging.info(
+        f"AI 健康与健身规划器启动 - 时间: {startup_time} - 用户: {st.session_state.user_id}"
+    )
 
     st.title("🏋️‍♂️ AI 健康与健身规划器")
     st.markdown(
@@ -271,26 +282,31 @@ def main():
     """,
         unsafe_allow_html=True,
     )
-    
+
     # 根据运行环境获取默认配置
     default_config = get_default_config()
     api_key_to_use = get_api_key()
-    
+
     # 记录运行环境和配置信息
     is_cloud = is_streamlit_cloud()
-    logging.info(f"用户 {st.session_state.user_id} - 运行环境: {'Streamlit Cloud' if is_cloud else '本地环境'}")
+    logging.info(
+        f"用户 {st.session_state.user_id} - 运行环境: {'Streamlit Cloud' if is_cloud else '本地环境'}"
+    )
     logging.info(f"用户 {st.session_state.user_id} - 默认配置: {default_config}")
-    
+
     # 使用环境默认配置
     model_provider = default_config["model_provider"]
     model_name = default_config["model_name"]
     base_url = default_config["base_url"]
-    
+
     # 检查API密钥是否可用
     if not api_key_to_use:
         if is_cloud:
-            st.error("❌ 无法获取 Gemini API 密钥，请在 Streamlit Cloud 的 secrets.toml 中配置 GEMINI_API_KEY 或 API_KEY")
-            st.markdown("""
+            st.error(
+                "❌ 无法获取 Gemini API 密钥，请在 Streamlit Cloud 的 secrets.toml 中配置 GEMINI_API_KEY 或 API_KEY"
+            )
+            st.markdown(
+                """
             **配置说明：**
             1. 在 Streamlit Cloud 项目设置中添加 secrets.toml 文件
             2. 添加以下内容：
@@ -299,10 +315,14 @@ def main():
             GEMINI_API_KEY = "your-gemini-api-key-here"
             ```
             3. 重新部署应用
-            """)
+            """
+            )
         else:
-            st.error("❌ 无法获取 OpenAI API 密钥，请设置环境变量 OPENAI_API_KEY 或在 secrets.toml 中配置")
-            st.markdown("""
+            st.error(
+                "❌ 无法获取 OpenAI API 密钥，请设置环境变量 OPENAI_API_KEY 或在 secrets.toml 中配置"
+            )
+            st.markdown(
+                """
             **配置说明：**
             1. 设置环境变量：`export OPENAI_API_KEY=your-openai-api-key`
             2. 或在项目根目录创建 .streamlit/secrets.toml 文件：
@@ -310,14 +330,17 @@ def main():
             [api_keys]
             OPENAI_API_KEY = "your-openai-api-key-here"
             ```
-            """)
+            """
+            )
         return
-    
+
     logging.info(f"用户 {st.session_state.user_id} - model_provider: {model_provider}")
     logging.info(f"用户 {st.session_state.user_id} - model_name: {model_name}")
     logging.info(f"用户 {st.session_state.user_id} - base_url: {base_url}")
-    logging.info(f"用户 {st.session_state.user_id} - api_key: {api_key_to_use[:10] if api_key_to_use else 'None'}...")
-    
+    logging.info(
+        f"用户 {st.session_state.user_id} - api_key: {api_key_to_use[:10] if api_key_to_use else 'None'}..."
+    )
+
     # 显示当前环境和模型配置状态
     # with st.sidebar:
     #     st.header("🤖 当前配置")
@@ -334,6 +357,7 @@ def main():
     col1, col2 = st.columns(2)
 
     with col1:
+        name = st.text_input("昵称", value="Christina")
         age = st.number_input(
             "年龄", min_value=10, max_value=100, step=1, value=25, help="输入您的年龄"
         )
@@ -345,15 +369,17 @@ def main():
             options=["久坐", "轻度活跃", "中度活跃", "非常活跃", "极度活跃", "不运动"],
             help="选择您通常的活动水平",
         )
+
+    with col2:
+        weight = st.number_input(
+            "体重 (kg)", min_value=30.0, max_value=300.0, step=0.1, value=50.0
+        )
+        sex = st.selectbox("性别", options=["女性", "男性", "其他"])
         dietary_preferences = st.selectbox(
             "饮食偏好",
             options=["素食", "荤素搭配", "生酮", "无麸质", "低碳水", "无乳制品"],
             help="选择您的饮食偏好",
         )
-
-    with col2:
-        weight = st.number_input("体重 (kg)", min_value=30.0, max_value=300.0, step=0.1, value=70.0)
-        sex = st.selectbox("性别", options=["女性", "男性", "其他"])
         fitness_goals = st.selectbox(
             "健身目标",
             options=["减肥", "增肌", "耐力", "保持健康", "力量训练", "塑形"],
@@ -364,16 +390,16 @@ def main():
     if st.session_state.generation_status == "generating":
         progress_bar = st.progress(st.session_state.generation_progress)
         st.info(f"🔄 {st.session_state.current_task}")
-        
+
         # 检查异步任务是否完成
         if "plan_futures" in st.session_state:
             dietary_future, fitness_future = st.session_state.plan_futures
-            
+
             if dietary_future.done() and fitness_future.done():
                 try:
                     dietary_content = dietary_future.result()
                     fitness_content = fitness_future.result()
-                    
+
                     if dietary_content and fitness_content:
                         dietary_plan = {
                             "why_this_plan_works": "高蛋白、健康脂肪、适量碳水化合物和热量平衡",
@@ -385,7 +411,7 @@ def main():
                             - 倾听身体的声音：根据需要调整份量
                             """,
                         }
-                        
+
                         fitness_plan = {
                             "goals": "增强力量、提高耐力并保持整体健康",
                             "routine": fitness_content,
@@ -396,17 +422,17 @@ def main():
                             - 坚持您的日常锻炼
                             """,
                         }
-                        
+
                         st.session_state.dietary_plan = dietary_plan
                         st.session_state.fitness_plan = fitness_plan
                         st.session_state.plans_generated = True
                         st.session_state.generation_status = "completed"
                         st.session_state.generation_progress = 100
                         st.session_state.current_task = "✅ 计划生成完成！"
-                        
+
                         # 清理future对象
                         del st.session_state.plan_futures
-                        
+
                         logging.info(f"用户 {st.session_state.user_id} 计划生成成功")
                         st.rerun()
                     else:
@@ -414,11 +440,13 @@ def main():
                         st.error("❌ 计划生成失败，请重试")
                         if "plan_futures" in st.session_state:
                             del st.session_state.plan_futures
-                        
+
                 except Exception as e:
                     st.session_state.generation_status = "error"
                     st.error(f"❌ 生成计划时发生错误: {str(e)}")
-                    logging.error(f"用户 {st.session_state.user_id} 计划生成失败: {str(e)}")
+                    logging.error(
+                        f"用户 {st.session_state.user_id} 计划生成失败: {str(e)}"
+                    )
                     if "plan_futures" in st.session_state:
                         del st.session_state.plan_futures
             else:
@@ -429,14 +457,25 @@ def main():
                 if fitness_future.done():
                     progress += 40
                 st.session_state.generation_progress = progress
-                
+
                 # 自动刷新页面
                 time.sleep(1)
                 st.rerun()
-    
+
     # 生成计划按钮
-    if st.button("🎯 生成我的个性化计划", use_container_width=True, disabled=(st.session_state.generation_status == "generating")):
+    if st.button(
+        "🎯 生成我的个性化计划",
+        use_container_width=True,
+        disabled=(st.session_state.generation_status == "generating"),
+    ):
         try:
+            logging.info(
+                f"用户 {st.session_state.user_id.strip()} 开始生成计划，用户资料: 昵称:{name.strip()},"
+                + f"年龄:{age}, 体重:{weight}, "
+                + f"身高:{height}, 性别:{sex.strip()}, 活动水平:{activity_level.strip()}, "
+                + f"饮食偏好:{dietary_preferences.strip()}, 健身目标:{fitness_goals.strip()}"
+            )
+
             user_profile = f"""
             年龄: {age}
             体重: {weight}kg
@@ -446,46 +485,57 @@ def main():
             饮食偏好: {dietary_preferences}
             健身目标: {fitness_goals}
             """
-            
-            logging.info(f"用户 {st.session_state.user_id} 开始生成计划")
-            logging.info(f"用户资料: {user_profile}")
-            
+
             # 设置生成状态
             st.session_state.generation_status = "generating"
             st.session_state.generation_progress = 10
             st.session_state.current_task = "🚀 正在启动计划生成..."
             st.session_state.qa_pairs = []
-            
+
             # 异步提交任务
             executor = st.session_state.executor
             dietary_future = executor.submit(
-                generate_plan_async, 
-                user_profile, model_provider, model_name, base_url, api_key_to_use, "dietary"
+                generate_plan_async,
+                user_profile,
+                model_provider,
+                model_name,
+                base_url,
+                api_key_to_use,
+                "dietary",
             )
             fitness_future = executor.submit(
-                generate_plan_async, 
-                user_profile, model_provider, model_name, base_url, api_key_to_use, "fitness"
+                generate_plan_async,
+                user_profile,
+                model_provider,
+                model_name,
+                base_url,
+                api_key_to_use,
+                "fitness",
             )
-            
+
             st.session_state.plan_futures = (dietary_future, fitness_future)
             st.session_state.current_task = "🍽️ 正在生成饮食计划和健身计划..."
             st.session_state.generation_progress = 20
-            
+
             st.rerun()
-            
+
         except Exception as e:
             error_msg = str(e)
             error_traceback = traceback.format_exc()
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            
+
             # 重置状态
             st.session_state.generation_status = "error"
             if "plan_futures" in st.session_state:
                 del st.session_state.plan_futures
 
             # 详细日志记录
-            logging.error(f"用户 {st.session_state.user_id} 计划生成失败 - 时间: {timestamp}")
-            logging.error(f"用户配置: 年龄={age}, 体重={weight}, 身高={height}, 性别={sex}")
+            logging.error(
+                f"用户 {st.session_state.user_id} 计划生成失败 - 时间: {timestamp}"
+            )
+            logging.error(
+                f"用户配置: 年龄={age}, 体重={weight}, 身高={height}, 性别={sex}"
+            )
             logging.error(f"错误信息: {error_msg}")
             logging.error(f"完整堆栈跟踪:\n{error_traceback}")
 
@@ -496,7 +546,9 @@ def main():
             with st.expander("🔍 详细错误信息（用于调试）", expanded=False):
                 st.code(error_traceback)
                 st.markdown(f"**时间戳:** {timestamp}")
-                st.markdown(f"**用户配置:** 年龄={age}, 体重={weight}, 身高={height}, 性别={sex}")
+                st.markdown(
+                    f"**用户配置:** 年龄={age}, 体重={weight}, 身高={height}, 性别={sex}"
+                )
 
             # 根据错误类型提供具体的解决建议
             if "400" in error_msg or "InvalidRequest" in error_msg:
@@ -523,22 +575,29 @@ def main():
                 st.markdown("- 检查网络连接\n- 尝试重新运行\n- 确认 API 服务地址正确")
             else:
                 st.warning("**通用解决方案:**")
-                st.markdown("- 检查所有配置参数\n- 重新启动应用\n- 联系 API 提供商确认服务状态")
+                st.markdown(
+                    "- 检查所有配置参数\n- 重新启动应用\n- 联系 API 提供商确认服务状态"
+                )
 
             # 记录详细错误到日志文件
             try:
                 with open("error_logs.txt", "a", encoding="utf-8") as f:
-                    f.write(f"\n[{timestamp}] 用户 {st.session_state.user_id} 计划生成错误: {error_msg}\n")
+                    f.write(
+                        f"\n[{timestamp}] 用户 {st.session_state.user_id} 计划生成错误: {error_msg}\n"
+                    )
                     f.write(f"堆栈跟踪: {error_traceback}\n")
                     f.write("-" * 50 + "\n")
             except Exception as log_error:
                 logging.error(f"写入日志文件失败: {log_error}")
 
     # 显示已生成的计划
-    if st.session_state.plans_generated and st.session_state.generation_status == "completed":
+    if (
+        st.session_state.plans_generated
+        and st.session_state.generation_status == "completed"
+    ):
         display_dietary_plan(st.session_state.dietary_plan)
         display_fitness_plan(st.session_state.fitness_plan)
-        
+
         # 添加重新生成按钮
         col1, col2, col3 = st.columns([1, 1, 1])
         with col2:
@@ -588,7 +647,7 @@ def main():
                         model=qa_model,
                         system_prompt="你是一位健康和健身专家。请根据提供的饮食和健身计划回答用户的问题。用中文回复。",
                     )
-                    
+
                     with st.spinner("正在为您寻找最佳答案..."):
                         run_response = agent.run(full_context)
 
@@ -599,7 +658,7 @@ def main():
 
                         st.session_state.qa_pairs.append((question_input, answer))
                         logging.info(f"用户 {st.session_state.user_id} 问答成功")
-                        
+
                 except Exception as e:
                     st.error(f"❌ 获取答案时发生错误: {e}")
                     logging.error(f"用户 {st.session_state.user_id} 问答失败: {str(e)}")

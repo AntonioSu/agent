@@ -1,0 +1,6 @@
+.DS_Store
+secrets.toml
+run.sh
+logs/
+*.log
+*logs*

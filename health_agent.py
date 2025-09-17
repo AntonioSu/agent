@@ -11,7 +11,7 @@ import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 import asyncio
-
+import deepseek_fix
 # 配置日志
 logging.basicConfig(
     level=logging.INFO,
@@ -40,42 +40,25 @@ def get_api_key():
         if is_streamlit_cloud():
             # Streamlit Cloud环境，尝试获取Gemini API密钥
             try:
-                api_key = st.secrets["api_keys"]["GEMINI_API_KEY"]
+                api_key = st.secrets["api_keys"]["API_KEY"]
                 logging.info("已成功从 secrets.toml 加载 Gemini API密钥")
                 return api_key
             except KeyError:
-                # 如果没有GEMINI_API_KEY，尝试通用的API_KEY
-                api_key = st.secrets["api_keys"]["API_KEY"]
-                logging.info("已成功从 secrets.toml 加载通用API密钥")
+                logging.info("请在 secrets.toml 中设置 API_KEY！")
                 return api_key
         else:
             # 本地环境，优先获取OpenAI API密钥
             try:
-                api_key = st.secrets["api_keys"]["OPENAI_API_KEY"]
-                logging.info("已成功从 secrets.toml 加载 OpenAI API密钥")
+                api_key = os.getenv("API_KEY")
+                logging.info("已从环境变量加载 API密钥")
                 return api_key
             except KeyError:
-                # 如果没有OPENAI_API_KEY，尝试通用的API_KEY
-                api_key = st.secrets["api_keys"]["API_KEY"]
-                logging.info("已成功从 secrets.toml 加载通用API密钥")
+                logging.info("请设置 API_KEY 环境变量！")
                 return api_key
     except (KeyError, FileNotFoundError):
         # 如果 secrets.toml 中没有，则尝试从环境变量读取
-        if is_streamlit_cloud():
-            # Streamlit Cloud环境，尝试获取Gemini相关环境变量
-            api_key = os.getenv("GEMINI_API_KEY") or os.getenv("API_KEY")
-            if api_key:
-                logging.info("已从环境变量加载 Gemini API密钥")
-            else:
-                logging.error("请在 secrets.toml 中设置 GEMINI_API_KEY 或设置环境变量 GEMINI_API_KEY/API_KEY！")
-        else:
-            # 本地环境，尝试获取OpenAI相关环境变量
-            api_key = os.getenv("OPENAI_API_KEY") or os.getenv("API_KEY")
-            if api_key:
-                logging.info("已从环境变量加载 OpenAI API密钥")
-            else:
-                logging.error("请在 secrets.toml 中设置 OPENAI_API_KEY 或设置环境变量 OPENAI_API_KEY/API_KEY！")
-        return api_key
+        logging.error("如果secrets.toml中没有，请设置 API_KEY 环境变量！")
+        return None
 
 # 根据运行环境获取默认配置
 def get_default_config():
@@ -83,15 +66,15 @@ def get_default_config():
     if is_streamlit_cloud():
         # Streamlit Cloud 环境使用 Gemini
         return {
-            "model_provider": "Gemini",
-            "model_name": "gemini-2.5-flash-preview-05-20",
-            "base_url": "https://aistudio.google.com/apikey"
+            "model_provider": os.getenv("MODEL_PROVIDER","Gemini"),
+            "model_name": os.getenv("MODEL_NAME","gemini-2.5-flash-preview-05-20"),
+            "base_url": os.getenv("URL","https://aistudio.google.com/apikey")
         }
     else:
         # 本地环境使用 OpenAI
         return {
-            "model_provider": os.getenv("MODEL_PROVIDER"), 
-            "model_name": os.getenv("MODEL_NAME"),
+            "model_provider": os.getenv("MODEL_PROVIDER","DeepSeek"), 
+            "model_name": os.getenv("MODEL_NAME","deepseek-v3"),
             "base_url": os.getenv("URL")
         }
 
@@ -180,15 +163,15 @@ def generate_plan_async(user_profile, model_provider, model_name, base_url, api_
         # 初始化模型
         model = None
         if model_provider == "Gemini":
+            logging.info(f"+++++使用Gemini模型: {model_name}, {base_url}, {api_key}")
+
             model = Gemini(id=model_name, api_key=api_key)
         else:
-            clean_base_url = base_url.strip()
-            if not clean_base_url.endswith("/"):
-                clean_base_url += "/"
+            logging.info(f"+++++使用OpenAI模型: {model_name}, {base_url}, {api_key}")
             model = OpenAIChat(
                 id=model_name,
                 api_key=api_key,
-                base_url=clean_base_url,
+                base_url=base_url,
                 max_tokens=2000,
                 temperature=0.7,
             )
